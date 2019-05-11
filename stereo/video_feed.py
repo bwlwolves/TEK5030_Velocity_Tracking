@@ -67,7 +67,7 @@ def bounding_circle(img_binary, orig_image, radius_threshold):
     contours, hierachy = cv2.findContours(img_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     img_bin_ret = 0
     for c in contours:
-        # Circles instead of rectangular boxes #
+        # Circles inaddDepthstead of rectangular boxes #
         (x, y), radius = cv2.minEnclosingCircle(c)
         center = (int(x), int(y))
         radius = int(radius)
@@ -80,7 +80,7 @@ def bounding_circle(img_binary, orig_image, radius_threshold):
 
 def bounding_box(img_binary, orig_image, keypoints, w_bound, h_bound):
     contours, hierachy = cv2.findContours(img_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    img_bin_ret = 0
+    img_bin_ret = orig_image
     tot_iterations = 0
     for c in contours:
         # NON-rotating box #
@@ -144,29 +144,94 @@ def binary_threshold(image):
     ret, thresh = cv2.threshold(src=gray, thresh=0, maxval=255, type=cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     return thresh
 
+def find_ADELE_Depth(Q_matrix, disparity):
+    baseline_ = 1.0/Q_matrix[3][2]
+    focal_ = Q_matrix[2][3]
+    depth = (focal_ * baseline_)/disparity
+    return depth
+
 def open_stereo_camera(cam_index1,cam_index2 ,width, height, delta):
-    cap = cv2.VideoCapture(cam_index1)
-    cap2 = cv2.VideoCapture(cam_index2)
+    cap = cv2.VideoCapture(cam_index1) #"IF TEST TO CHECK FI THE CAMERA EXISTS"
+    cap2 = cv2.VideoCapture(cam_index2) #"IF TEST TO CHECK IF THE CAMERA EXISTS"
     fps = cap.get(cv2.CAP_PROP_FPS)
     fps2 = cap2.get(cv2.CAP_PROP_FPS)
+
+    scc.getChessBoardImages(cap, cap2)
+    retval,camMatrix1, distCoeffs1, camMatrix2, distCoeffs2, R, T, E, F, img_shape = scc.camera_stereoCalibrate(c_size_x=7, c_size_y=7)
+    r1,r2,p1,p2, Q = scc.camera_stereoRectify(camMatrix1, camMatrix2, distCoeffs1, distCoeffs2, R, T, img_shape)
+
+    def nothing(x):
+        pass
+    cv2.namedWindow('Color_filtration', cv2.WINDOW_AUTOSIZE)
+    cv2.createTrackbar('Upper R','Color_filtration',0,255,nothing)
+    cv2.createTrackbar('Upper G','Color_filtration',0,255,nothing)
+    cv2.createTrackbar('Upper B','Color_filtration',0,255,nothing)
+    cv2.createTrackbar('Lower R','Color_filtration',0,255,nothing)
+    cv2.createTrackbar('Lower G','Color_filtration',0,255,nothing)
+    cv2.createTrackbar('Lower B','Color_filtration',0,255,nothing)
+    switch_rect = 'rectangle ON \nrectangle OFF'
+    switch_circ = 'circle ON \ncircle OFF'
+    cv2.createTrackbar(switch_circ, 'Color_filtration',0,1,nothing)
+    cv2.createTrackbar(switch_rect, 'Color_filtration',0,1,nothing)
+
 
     while(True):
         ret, left_Frame = cap.read()
         ret2, right_Frame = cap2.read()
-        left_Frame = cv2.cvtColor(left_Frame, cv2.COLOR_BGR2GRAY)
-        right_Frame = cv2.cvtColor(right_Frame, cv2.COLOR_BGR2GRAY)
-        cv2.imshow("Left-camera", left_Frame)
-        cv2.imshow("Right-camera", right_Frame)
 
-        stereo = cv2.StereoBM_create(numDisparities=32, blockSize=15)
-        disparity = stereo.compute(left_Frame, right_Frame)
+        upper_r = cv2.getTrackbarPos('Upper R', 'Color_filtration')
+        upper_g = cv2.getTrackbarPos('Upper G', 'Color_filtration')
+        upper_b = cv2.getTrackbarPos('Upper B', 'Color_filtration')
+        lower_r = cv2.getTrackbarPos('Lower R', 'Color_filtration')
+        lower_g = cv2.getTrackbarPos('Lower G', 'Color_filtration')
+        lower_b = cv2.getTrackbarPos('Lower B', 'Color_filtration')
+        track_circle = cv2.getTrackbarPos(switch_circ, 'Color_filtration')
+        track_rectangle = cv2.getTrackbarPos(switch_rect, 'Color_filtration')
+        """
+        stuff1 = extract_features_dynamic(image=left_Frame,ksize=3,
+                                              upper_r=upper_r, upper_g=upper_g, upper_b=upper_b,
+                                              lower_r=lower_r, lower_g=lower_g, lower_b=lower_b)
+        stuff2 = extract_features_dynamic(image=right_Frame,ksize=3,
+                                              upper_r=upper_r, upper_g=upper_g, upper_b=upper_b,
+                                              lower_r=lower_r, lower_g=lower_g, lower_b=lower_b)
 
-        disparity_norm = cv2.normalize(src=disparity, dst=None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+        """
+        stuff1 = extract_features(image=left_Frame, ksize=3, color_filter='R')
+        stuff2 = extract_features(image=right_Frame, ksize=3, color_filter='R')
 
+        threshold_bin1 = binary_threshold(stuff1)
+        threshold_bin2 = binary_threshold(stuff2)
+
+        #cv2.imshow("Left-camera", left_Frame)
+        #cv2.imshow("Right-camera", right_Frame)
+        cv2.imshow("Thresh1", threshold_bin1)
+        cv2.imshow("Thresh2", threshold_bin2)
+
+        if track_rectangle == 1:
+            bbox, contours_curr = bounding_box(img_binary=threshold_bin1, orig_image=left_Frame, keypoints=5, w_bound=70, h_bound=70)
+            bbox2, contours_curr2 = bounding_box(img_binary=threshold_bin2, orig_image=right_Frame, keypoints=10, w_bound=30, h_bound=30)
+            cv2.imshow('bounding box1',bbox)
+            cv2.imshow('bounding box2',bbox2)
+
+        left_Frame_g = cv2.cvtColor(left_Frame, cv2.COLOR_BGR2GRAY)
+        right_Frame_g = cv2.cvtColor(right_Frame, cv2.COLOR_BGR2GRAY)
+
+
+        stereo = cv2.StereoSGBM_create(numDisparities=32, blockSize=5)
+        disparity = stereo.compute(left_Frame_g, right_Frame_g)
+        disparity_norm = cv2.normalize(src=disparity, dst=None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+
+        points_disp = None
+        points_disp = cv2.reprojectImageTo3D(disparity=disparity,_3dImage=points_disp,Q=Q, handleMissingValues=False, ddepth=cv2.CV_32F)
+        #depths = find_ADELE_Depth(Q_matrix=Q, disparity=disparity)
+        #print(depths)
         cv2.imshow("disp", disparity_norm)
+        cv2.imshow("points", points_disp)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+    cap.release()
+    cap2.release()
     cv2.destroyAllWindows() # BENJAMIN HACKED!!!!!
 
 def open_one_camera(cam_index, width, height,delta):
@@ -247,20 +312,8 @@ def open_one_camera(cam_index, width, height,delta):
     cv2.destroyAllWindows()
 
 def main():
-    #image_read = cv2.imread("red_apple.jpg")
     #open_one_camera(cam_index=0, width=640, height=480, delta=0)
-    #open_stereo_camera(cam_index=2, width=640, height=480, delta=0)
-    scc.getChessBoardImages(4,6)
-    retval,camMatrix1, distCoeffs1, camMatrix2, distCoeffs2, R, T, E, F, img_shape = scc.camera_stereoCalibrate(c_size_x=7, c_size_y=7)
-    r1,r2,p1,p2, disp_depth = scc.camera_stereoRectify(camMatrix1, camMatrix2, distCoeffs1, distCoeffs2, R, T, img_shape)
+    open_stereo_camera(cam_index1=0, cam_index2=6, width=640, height=480, delta=0)
 
-
-    #img_bin = extract_features(image_read, 3, 'R')
-    #img_thresh = binary_threshold(img_bin)
-    #b_box = bounding_box(img_binary=img_thresh, orig_image=image_read, keypoints=2, w_bound=40, h_bound=40)
-    #cv2.imshow("Blob", b_box)
-    #cv2.waitKey(0)
-
-    #tracker(cam_index=0, width=640, height=480, delta=0)
 if __name__ == '__main__':
     main()

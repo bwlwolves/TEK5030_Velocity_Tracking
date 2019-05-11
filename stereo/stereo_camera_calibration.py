@@ -3,13 +3,13 @@ import cv2
 import glob
 import os
 
-def getChessBoardImages(cam_index1, cam_index2):
+def getChessBoardImages(cap, cap2):
     if (len(os.listdir('images')) != 0):
         print("Folder is not empty -- Existing images --")
         return
 
-    cap = cv2.VideoCapture(cam_index1)
-    cap2 = cv2.VideoCapture(cam_index2)
+    #cap = cv2.VideoCapture(cam_index1)
+    #cap2 = cv2.VideoCapture(cam_index2)
     i = 0
     while (True):
         ret, left_Frame = cap.read()
